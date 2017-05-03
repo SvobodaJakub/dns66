@@ -518,21 +518,7 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
     }
 
     boolean hasIpV6Servers(Configuration config, Set<InetAddress> dnsServers) {
-        if (!config.ipV6Support)
-            return false;
-
-        if (config.dnsServers.enabled) {
-            for (Configuration.Item item : config.dnsServers.items) {
-                if (item.state == Configuration.Item.STATE_ALLOW && item.location.contains(":"))
-                    return true;
-            }
-        }
-        for (InetAddress inetAddress : dnsServers) {
-            if (inetAddress instanceof Inet6Address)
-                return true;
-        }
-
-        return false;
+        return config.ipV6Support;
     }
 
     public interface Notify {
