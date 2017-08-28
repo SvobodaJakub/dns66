@@ -9,6 +9,7 @@ package org.jak_linux.dns66.db;
 
 import android.content.Context;
 import android.support.annotation.Nullable;
+import android.text.TextUtils;
 import android.util.Log;
 
 import org.jak_linux.dns66.Configuration;
@@ -106,7 +107,34 @@ public class RuleDatabase {
      * @return true if the host is blocked, false otherwise.
      */
     public boolean isBlocked(String host) {
-        return blockedHosts.get().contains(host);
+
+        // example: host == server3389.de.beacon.tracking.badserver.com
+        if (blockedHosts.get().contains(host)) {
+            return true;
+        }
+
+        // example of chopping off:
+        // i == 0, host == de.beacon.tracking.badserver.com
+        // i == 1, host == beacon.tracking.badserver.com
+        // i == 2, host == tracking.badserver.com
+        // i == 3, host == badserver.com
+        // i == 4, host == com
+        // (yes, comparing even the top-level domain so that malicious TLDs can be present in the
+        //  blocklist and can be blocked)
+
+        for (int i = 0; i < 10; i++) {
+            // strip up to 10 leading parts (so that there is an upper bound for performance reasons)
+            String[] split_host = host.split("\\.", 2);
+            if (split_host.length <= 1) {
+                // there's nothing to chop off left
+                break;
+            }
+            host = split_host[1];
+            if (blockedHosts.get().contains(host)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -174,12 +202,36 @@ public class RuleDatabase {
     }
 
     /**
-     * Add a single host for an item.
+     * Add a host for an item.
+     * If the host address has more than 3 parts (e.g. en.analytics.example.com), it also adds
+     * the last 3 parts as another host (e.g. analytics.example.com), so that related subdomains
+     * are handled as well (e.g. de.analytics.example.com). This cannot be done for two parts
+     * because e.g. analytics.example.com would cause example.com and docs.example.com to be
+     * blocked as well and we don't want that. 3 parts is the best balance.
      *
      * @param item The item the host belongs to
      * @param host The host
      */
     private void addHost(Configuration.Item item, String host) {
+
+        addHostSingle(item, host);
+
+        String[] split_host = host.split("\\.");
+        if (split_host.length > 3) {
+            String[] split_host_2 = new String[3];
+            System.arraycopy(split_host, split_host.length-3, split_host_2, 0, 3);
+            String host_2 = TextUtils.join(".", split_host_2);
+            addHostSingle(item, host_2);
+        }
+    }
+
+    /**
+     * Add a single host for an item. No host name mangling.
+     *
+     * @param item The item the host belongs to
+     * @param host The host
+     */
+    private void addHostSingle(Configuration.Item item, String host) {
         // Single address to block
         if (item.state == Configuration.Item.STATE_ALLOW) {
             nextBlockedHosts.remove(host);
