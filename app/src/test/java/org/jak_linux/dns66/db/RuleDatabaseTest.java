@@ -65,7 +65,7 @@ public class RuleDatabaseTest {
         // Space trimming
         assertNull(RuleDatabase.parseLine(" 127.0.0.1 example.com"));
         assertEquals("127.0.0.1.example.com", RuleDatabase.parseLine("127.0.0.1.example.com "));
-        assertEquals("::1.example.com", RuleDatabase.parseLine("::1.example.com "));
+        assertEquals("::1.example.com", RuleDatabase.parseLine("::1.example.com "));  //TODO: research this, it looks invalid to me
         assertEquals("0.0.0.0.example.com", RuleDatabase.parseLine("0.0.0.0.example.com "));
         assertEquals("example.com", RuleDatabase.parseLine("127.0.0.1 example.com "));
         assertEquals("example.com", RuleDatabase.parseLine("127.0.0.1 example.com\t"));
