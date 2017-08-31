@@ -3,6 +3,7 @@
     <string name="app_shortdesc">Host blocking and custom DNS servers</string>
     <string name="custom_dns">Custom DNS servers</string>
     <string name="enable_hosts">Filter hosts</string>
+    <string name="extended_filtering">Extensive filtering - assume wildcard in front of all domains in lists, merge subdomains below third-level domains (fourth for .co.uk and similar), strip www. from domains in lists.</string>
     <string name="start_tab">Start</string>
     <string name="hosts_tab">Hosts</string>
     <string name="dns_tab">DNS</string>

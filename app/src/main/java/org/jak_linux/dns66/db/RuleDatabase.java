@@ -37,6 +37,7 @@ public class RuleDatabase {
     private static final RuleDatabase instance = new RuleDatabase();
     final AtomicReference<HashSet<String>> blockedHosts = new AtomicReference<>(new HashSet<String>());
     HashSet<String> nextBlockedHosts = null;
+    Configuration config = null;
 
     /**
      * Package-private constructor for instance and unit tests.
@@ -205,25 +206,30 @@ public class RuleDatabase {
             return true;
         }
 
-        // example of chopping off:
-        // i == 0, host == de.beacon.tracking.badserver.com
-        // i == 1, host == beacon.tracking.badserver.com
-        // i == 2, host == tracking.badserver.com
-        // i == 3, host == badserver.com
-        // i == 4, host == com
-        // (yes, comparing even the top-level domain so that malicious TLDs can be present in the
-        //  blocklist and can be blocked)
+        if ((null != config) && (config.extendedFiltering.enabled)) {
+            // example of chopping off:
+            // i == 0, host == de.beacon.tracking.badserver.com
+            // i == 1, host == beacon.tracking.badserver.com
+            // i == 2, host == tracking.badserver.com
+            // i == 3, host == badserver.com
+            // i == 4, host == com
+            // (yes, comparing even the top-level domain so that malicious TLDs can be present in the
+            //  blocklist and can be blocked)
 
-        for (int i = 0; i < 10; i++) {
-            // strip up to 10 leading parts (so that there is an upper bound for performance reasons)
-            String[] split_host = host.split("\\.", 2);
-            if (split_host.length <= 1) {
-                // there's nothing to chop off left
-                break;
-            }
-            host = split_host[1];
-            if (blockedHosts.get().contains(host)) {
-                return true;
+            // This is effectively like having a wildcard before every domain in the blacklist -
+            // *.example.com
+
+            for (int i = 0; i < 10; i++) {
+                // strip up to 10 leading parts (so that there is an upper bound for performance reasons)
+                String[] split_host = host.split("\\.", 2);
+                if (split_host.length <= 1) {
+                    // there's nothing to chop off left
+                    break;
+                }
+                host = split_host[1];
+                if (blockedHosts.get().contains(host)) {
+                    return true;
+                }
             }
         }
         return false;
@@ -246,7 +252,7 @@ public class RuleDatabase {
      *                              reading more host files than needed.
      */
     public synchronized void initialize(Context context) throws InterruptedException {
-        Configuration config = FileHelper.loadCurrentSettings(context);
+        config = FileHelper.loadCurrentSettings(context);
 
         nextBlockedHosts = new HashSet<>(blockedHosts.get().size());
 
@@ -312,34 +318,37 @@ public class RuleDatabase {
 
         addHostSingle(item, host);
 
-        //TODO rework logic so that it uses only indexes and charAt; no splitting etc
+        if ((null != config) && (config.extendedFiltering.enabled)) {
+            //TODO rework logic so that it uses only indexes and charAt; no splitting etc
 
-        String[] split_host = host.split("\\.");
-        if (split_host.length > 3) {  // optimization - with less than 3, it doesn't matter
-            // If the host address has more than 3 parts (e.g. en.analytics.example.com), it also adds
-            // the last 3 parts as another host (e.g. analytics.example.com), so that related subdomains
-            // are handled as well (e.g. de.analytics.example.com). This cannot be done for two parts
-            // because e.g. analytics.example.com would cause example.com and docs.example.com to be
-            // blocked as well and we don't want that. 3 parts is the best balance.
-            // If the public suffix is something else than one part (e.g. co.uk instead of com),
-            // it is adjusted accordingly.
-            int partsPublicSuffix = howManyPartsIsPublicSuffix(host);
-            int resultPartsNum = 2 + partsPublicSuffix;
+            String[] split_host = host.split("\\.");
+            if (split_host.length > 3) {  // optimization - with less than 3, it doesn't matter
+                // If the host address has more than 3 parts (e.g. en.analytics.example.com), it also adds
+                // the last 3 parts as another host (e.g. analytics.example.com), so that related subdomains
+                // are handled as well (e.g. de.analytics.example.com). This cannot be done for two parts
+                // because e.g. analytics.example.com would cause example.com and docs.example.com to be
+                // blocked as well and we don't want that. 3 parts is the best balance.
+                // If the public suffix is something else than one part (e.g. co.uk instead of com),
+                // it is adjusted accordingly.
+                int partsPublicSuffix = howManyPartsIsPublicSuffix(host);
+                int resultPartsNum = 2 + partsPublicSuffix;
 
-            if (split_host.length > resultPartsNum) {
-                String[] split_host_2 = new String[resultPartsNum];
-                System.arraycopy(split_host, split_host.length - resultPartsNum, split_host_2, 0, resultPartsNum);
-                String host_2 = TextUtils.join(".", split_host_2);
-                addHostSingle(item, host_2);
+                if (split_host.length > resultPartsNum) {
+                    String[] split_host_2 = new String[resultPartsNum];
+                    System.arraycopy(split_host, split_host.length - resultPartsNum, split_host_2, 0, resultPartsNum);
+                    String host_2 = TextUtils.join(".", split_host_2);
+                    addHostSingle(item, host_2);
+                }
             }
-        }
 
-        // If the host address begins with "www." (e.g. www.badsite.com), it also adds the domain
-        // name without the leading "www." (e.g. badsite.com).
-        String[] split_host_3  = host.split("\\.", 2);
-        if (split_host_3.length == 2) {
-            if (split_host_3[0].equals("www")) {
-                addHostSingle(item, split_host_3[1]);
+            // TODO move this to the parsing function
+            // If the host address begins with "www." (e.g. www.badsite.com), it also adds the domain
+            // name without the leading "www." (e.g. badsite.com).
+            String[] split_host_3 = host.split("\\.", 2);
+            if (split_host_3.length == 2) {
+                if (split_host_3[0].equals("www")) {
+                    addHostSingle(item, split_host_3[1]);
+                }
             }
         }
     }
