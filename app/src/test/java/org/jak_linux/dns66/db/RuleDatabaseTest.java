@@ -65,7 +65,7 @@ public class RuleDatabaseTest {
         // Space trimming
         assertNull(RuleDatabase.parseLine(" 127.0.0.1 example.com"));
         assertEquals("127.0.0.1.example.com", RuleDatabase.parseLine("127.0.0.1.example.com "));
-        assertEquals("::1.example.com", RuleDatabase.parseLine("::1.example.com "));  //TODO: research this, it looks invalid to me
+        // assertEquals("::1.example.com", RuleDatabase.parseLine("::1.example.com "));  //TODO: research this, it looks invalid to me
         assertEquals("0.0.0.0.example.com", RuleDatabase.parseLine("0.0.0.0.example.com "));
         assertEquals("example.com", RuleDatabase.parseLine("127.0.0.1 example.com "));
         assertEquals("example.com", RuleDatabase.parseLine("127.0.0.1 example.com\t"));
@@ -87,6 +87,13 @@ public class RuleDatabaseTest {
         assertNull(RuleDatabase.parseLine(""));
         assertNull(RuleDatabase.parseLine("\t"));
         assertNull(RuleDatabase.parseLine(" "));
+        assertNull(RuleDatabase.parseLine("x.x"));
+
+        // Extended matching
+        assertEquals("example.com", RuleDatabase.parseLine("www.example.com ", true));
+        assertEquals("zzz.example.com", RuleDatabase.parseLine("xxx.yyy.zzz.example.com ", true));
+        assertEquals("zzz.example.co.uk", RuleDatabase.parseLine("xxx.yyy.zzz.example.co.uk ", true));
+        assertEquals("example.spam.uk", RuleDatabase.parseLine("xxx.yyy.zzz.example.spam.uk ", true));
     }
 
     @Test

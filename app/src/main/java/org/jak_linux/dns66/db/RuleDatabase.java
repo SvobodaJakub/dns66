@@ -54,6 +54,7 @@ public class RuleDatabase {
         return instance;
     }
 
+
     /**
      * Parse a single line in a hosts file
      *
@@ -62,14 +63,23 @@ public class RuleDatabase {
      */
     @Nullable
     static String parseLine(String line) {
+        return parseLine(line, false);
+    }
 
-        //TODO rework logic so that it uses only indexes and charAt; no splitting etc
-        //TODO add input for setting of how deep similar domains are merged
+    /**
+     * Parse a single line in a hosts file
+     *
+     * @param line A line to parse
+     * @return A host
+     */
+    @Nullable
+    static String parseLine(String line, boolean extendedFiltering) {
 
         // Reject AdBlock Plus filters like these
         // www.google.com#@##videoads
         // because otherwise, the filter exception (#@##videoads) would be treated as a comment
-        // and then www.google.com would be treated as a domain (presumably to block)
+        // and then www.google.com would be treated as a domain (presumably to block).
+        // This is as fast as using indexOf - https://stackoverflow.com/a/10714409.
         if (line.contains("#@#"))
             return null;
 
@@ -108,40 +118,44 @@ public class RuleDatabase {
             endOfLine--;
         }
 
+        if (startOfHost >= endOfLine)
+            return null;
+
         // Reject strings containing a space or one of the symbols - that wouldn't be a signle
         // domain but some more complicated AdBlock plus filter and we want to ignore them
         for (int i = startOfHost; i < endOfLine; i++) {
-            if (Character.isWhitespace(line.charAt(i)))
+            char testedChar = line.charAt(i);
+            if (Character.isWhitespace(testedChar))
                 return null;
-            if (line.charAt(i) == '#')
+            if (testedChar == '#')
                 return null;
-            if (line.charAt(i) == '/')
+            if (testedChar == '/')
                 return null;
-            if (line.charAt(i) == '?')
+            if (testedChar == '?')
                 return null;
-            if (line.charAt(i) == ',')
+            if (testedChar == ',')
                 return null;
-            if (line.charAt(i) == ';')
+            if (testedChar == ';')
                 return null;
-            if (line.charAt(i) == ':')
+            if (testedChar == ':')
                 return null;
-            if (line.charAt(i) == '!')
+            if (testedChar == '!')
                 return null;
-            if (line.charAt(i) == '|')
+            if (testedChar == '|')
                 return null;
-            if (line.charAt(i) == '[')
+            if (testedChar == '[')
                 return null;
-            if (line.charAt(i) == '&')
+            if (testedChar == '&')
                 return null;
-            if (line.charAt(i) == '$')
+            if (testedChar == '$')
                 return null;
-            if (line.charAt(i) == '@')
+            if (testedChar == '@')
                 return null;
-            if (line.charAt(i) == '=')
+            if (testedChar == '=')
                 return null;
-            if (line.charAt(i) == '^')
+            if (testedChar == '^')
                 return null;
-            if (line.charAt(i) == '+')
+            if (testedChar == '+')
                 return null;
         }
 
@@ -174,9 +188,6 @@ public class RuleDatabase {
         if (line.charAt(endOfLine - 1) == '-') return null;
         if (line.charAt(endOfLine - 1) == '_') return null;
 
-        if (startOfHost >= endOfLine)
-            return null;
-
         // reject if there is no dot in the string
         int numOfDots = 0;
         for (int i = startOfHost; i < endOfLine; i++) {
@@ -185,6 +196,52 @@ public class RuleDatabase {
         }
         if (numOfDots == 0)
                 return null;
+
+        // reject strings shorter than 3 characters
+        if (startOfHost + 2 >= (endOfLine - 1) )
+            return null;
+
+        if (extendedFiltering) {
+            if (numOfDots > 2) {  // optimization - with less than 3 parts, it doesn't matter
+                // If the host address has more than 3 parts (e.g. en.analytics.example.com), it also adds
+                // the last 3 parts as another host (e.g. analytics.example.com), so that related subdomains
+                // are handled as well (e.g. de.analytics.example.com). This cannot be done for two parts
+                // because e.g. analytics.example.com would cause example.com and docs.example.com to be
+                // blocked as well and we don't want that. 3 parts is the best balance.
+                // If the public suffix is something else than one part (e.g. co.uk instead of com),
+                // it is adjusted accordingly.
+
+                int partsPublicSuffix = howManyPartsIsPublicSuffix(line.substring(startOfHost, endOfLine).toLowerCase(Locale.ENGLISH));
+
+                // how much to merge - 3 for sth.example.com, 4 for sth.example.co.uk
+                int resultPartsNum = 2 + partsPublicSuffix;
+
+                //    .        sth       .      example        .         com
+                //  dot 3    part 3    dot 2     part 2     dot 1       part 1
+
+
+                int currentDotCount = 0;
+                for (int i = endOfLine - 1; i >= startOfHost; i--) {
+                    if (line.charAt(i) == '.')
+                        currentDotCount++;
+                    if (currentDotCount == resultPartsNum) {
+                        // delete this dot and everything before it
+                        startOfHost = i + 1;
+                        break;
+                    }
+                }
+
+            }
+
+            // If the host address begins with "www." (e.g. www.badsite.com), it also adds the domain
+            // name without the leading "www." (e.g. badsite.com).
+            if (line.regionMatches(0, "www.", 0, 4))
+                startOfHost += 4;
+        }
+
+        // sanity checks again
+        if (startOfHost >= endOfLine)
+            return null;
 
         // reject strings shorter than 3 characters
         if (startOfHost + 2 >= (endOfLine - 1) )
@@ -315,58 +372,13 @@ public class RuleDatabase {
      * @param host The host
      */
     private void addHost(Configuration.Item item, String host) {
-
-        addHostSingle(item, host);
-
-        if ((null != config) && (config.extendedFiltering.enabled)) {
-            //TODO rework logic so that it uses only indexes and charAt; no splitting etc
-
-            String[] split_host = host.split("\\.");
-            if (split_host.length > 3) {  // optimization - with less than 3, it doesn't matter
-                // If the host address has more than 3 parts (e.g. en.analytics.example.com), it also adds
-                // the last 3 parts as another host (e.g. analytics.example.com), so that related subdomains
-                // are handled as well (e.g. de.analytics.example.com). This cannot be done for two parts
-                // because e.g. analytics.example.com would cause example.com and docs.example.com to be
-                // blocked as well and we don't want that. 3 parts is the best balance.
-                // If the public suffix is something else than one part (e.g. co.uk instead of com),
-                // it is adjusted accordingly.
-                int partsPublicSuffix = howManyPartsIsPublicSuffix(host);
-                int resultPartsNum = 2 + partsPublicSuffix;
-
-                if (split_host.length > resultPartsNum) {
-                    String[] split_host_2 = new String[resultPartsNum];
-                    System.arraycopy(split_host, split_host.length - resultPartsNum, split_host_2, 0, resultPartsNum);
-                    String host_2 = TextUtils.join(".", split_host_2);
-                    addHostSingle(item, host_2);
-                }
-            }
-
-            // TODO move this to the parsing function
-            // If the host address begins with "www." (e.g. www.badsite.com), it also adds the domain
-            // name without the leading "www." (e.g. badsite.com).
-            String[] split_host_3 = host.split("\\.", 2);
-            if (split_host_3.length == 2) {
-                if (split_host_3[0].equals("www")) {
-                    addHostSingle(item, split_host_3[1]);
-                }
-            }
-        }
-    }
-
-    /**
-     * Add a single host for an item. No host name mangling.
-     *
-     * @param item The item the host belongs to
-     * @param host The host
-     */
-    private void addHostSingle(Configuration.Item item, String host) {
-        // Single address to block
         if (item.state == Configuration.Item.STATE_ALLOW) {
             nextBlockedHosts.remove(host);
         } else if (item.state == Configuration.Item.STATE_DENY) {
             nextBlockedHosts.add(host);
         }
     }
+
 
     /**
      * Load a single file
@@ -376,6 +388,10 @@ public class RuleDatabase {
      * @throws InterruptedException If thread was interrupted
      */
     boolean loadReader(Configuration.Item item, Reader reader) throws InterruptedException {
+        boolean extendedFiltering = false;
+        if ((null != config) && (config.extendedFiltering.enabled)) {
+            extendedFiltering = true;
+        }
         int count = 0;
         try {
             Log.d(TAG, "loadBlockedHosts: Reading: " + item.location);
@@ -384,7 +400,7 @@ public class RuleDatabase {
                 while ((line = br.readLine()) != null) {
                     if (Thread.interrupted())
                         throw new InterruptedException("Interrupted");
-                    String host = parseLine(line);
+                    String host = parseLine(line, extendedFiltering);
                     if (host != null) {
                         count += 1;
                         addHost(item, host);
@@ -405,303 +421,58 @@ public class RuleDatabase {
      * Returns number of parts (those strings in domain names joined by dots) of the public suffix
      * of the given domain name.
      * @param domain
-     * @return Number of parts of the public suffix
+     * @return Number of parts of the public suffix, e.g. 1 for .com and 2 for .co.uk
      */
-    protected int howManyPartsIsPublicSuffix(String domain) {
-        String dotSuffix = getPublicSuffixWithDot(domain);
-        if (dotSuffix == null) {
-            return 1;
-        } else {
-            String[] split_suffix = dotSuffix.split("\\.");
-            return split_suffix.length;
+    protected static int howManyPartsIsPublicSuffix(String domain) {
+        // A dumb and simple algorithm for determining public prefixes from the beginning of
+        // https://bugzilla.mozilla.org/show_bug.cgi?id=252342
+        // Remember that the goal of publicsuffix.org is to allow safe handling of cookies,
+        // while in DNS66, it is just about minimizing too coarse blocking of fourth-level
+        // domains - if there is a misdetection, it won't have a security impact, just a
+        // different granularity of blocking for the particular domain.
+
+        // TODO refactor to not use split
+
+        // positions
+        int lastDot = -1;
+        int beforeLastDot = -1;
+
+        for (int i = domain.length() - 1; i >= 0; i--) {
+            if (domain.charAt(i) == '.') {
+                if (-1 == lastDot) {
+                    lastDot = i;
+                } else {
+                    beforeLastDot = i;
+                    break;
+                }
+            }
         }
-    }
 
-    /**
-     * If the provided string ends with a public suffix that contains a dot, it returns the suffix.
-     * Otherwise it returns null
-     * @param s Domain tested for a public suffix
-     * @return Suffix with dot or null
-     */
-    protected String getPublicSuffixWithDot(String s) {
-        //TODO: most probably, this should be punycode and not unicode
-        //TODO rework logic so that it uses only indexes and charAt; no splitting etc
-        //TODO: use a simple algorithm instead of publicsuffix list - https://bugzilla.mozilla.org/show_bug.cgi?id=252342
+        if (-1 == beforeLastDot)
+            return 1;
 
-        if (s.endsWith(".ltd.co.im")) {return "ltd.co.im";}
-        if (s.endsWith(".plc.co.im")) {return "plc.co.im";}
-        if (s.endsWith(".ac.uk")) {return "ac.uk";}
-        if (s.endsWith(".co.uk")) {return "co.uk";}
-        if (s.endsWith(".gov.uk")) {return "gov.uk";}
-        if (s.endsWith(".ltd.uk")) {return "ltd.uk";}
-        if (s.endsWith(".me.uk")) {return "me.uk";}
-        if (s.endsWith(".net.uk")) {return "net.uk";}
-        if (s.endsWith(".nhs.uk")) {return "nhs.uk";}
-        if (s.endsWith(".org.uk")) {return "org.uk";}
-        if (s.endsWith(".plc.uk")) {return "plc.uk";}
-        if (s.endsWith(".police.uk")) {return "police.uk";}
-        if (s.endsWith(".dni.us")) {return "dni.us";}
-        if (s.endsWith(".fed.us")) {return "fed.us";}
-        if (s.endsWith(".isa.us")) {return "isa.us";}
-        if (s.endsWith(".kids.us")) {return "kids.us";}
-        if (s.endsWith(".nsn.us")) {return "nsn.us";}
-        if (s.endsWith(".ak.us")) {return "ak.us";}
-        if (s.endsWith(".al.us")) {return "al.us";}
-        if (s.endsWith(".ar.us")) {return "ar.us";}
-        if (s.endsWith(".as.us")) {return "as.us";}
-        if (s.endsWith(".az.us")) {return "az.us";}
-        if (s.endsWith(".ca.us")) {return "ca.us";}
-        if (s.endsWith(".co.us")) {return "co.us";}
-        if (s.endsWith(".ct.us")) {return "ct.us";}
-        if (s.endsWith(".dc.us")) {return "dc.us";}
-        if (s.endsWith(".de.us")) {return "de.us";}
-        if (s.endsWith(".fl.us")) {return "fl.us";}
-        if (s.endsWith(".ga.us")) {return "ga.us";}
-        if (s.endsWith(".gu.us")) {return "gu.us";}
-        if (s.endsWith(".hi.us")) {return "hi.us";}
-        if (s.endsWith(".ia.us")) {return "ia.us";}
-        if (s.endsWith(".id.us")) {return "id.us";}
-        if (s.endsWith(".il.us")) {return "il.us";}
-        if (s.endsWith(".in.us")) {return "in.us";}
-        if (s.endsWith(".ks.us")) {return "ks.us";}
-        if (s.endsWith(".ky.us")) {return "ky.us";}
-        if (s.endsWith(".la.us")) {return "la.us";}
-        if (s.endsWith(".ma.us")) {return "ma.us";}
-        if (s.endsWith(".md.us")) {return "md.us";}
-        if (s.endsWith(".me.us")) {return "me.us";}
-        if (s.endsWith(".mi.us")) {return "mi.us";}
-        if (s.endsWith(".mn.us")) {return "mn.us";}
-        if (s.endsWith(".mo.us")) {return "mo.us";}
-        if (s.endsWith(".ms.us")) {return "ms.us";}
-        if (s.endsWith(".mt.us")) {return "mt.us";}
-        if (s.endsWith(".nc.us")) {return "nc.us";}
-        if (s.endsWith(".nd.us")) {return "nd.us";}
-        if (s.endsWith(".ne.us")) {return "ne.us";}
-        if (s.endsWith(".nh.us")) {return "nh.us";}
-        if (s.endsWith(".nj.us")) {return "nj.us";}
-        if (s.endsWith(".nm.us")) {return "nm.us";}
-        if (s.endsWith(".nv.us")) {return "nv.us";}
-        if (s.endsWith(".ny.us")) {return "ny.us";}
-        if (s.endsWith(".oh.us")) {return "oh.us";}
-        if (s.endsWith(".ok.us")) {return "ok.us";}
-        if (s.endsWith(".or.us")) {return "or.us";}
-        if (s.endsWith(".pa.us")) {return "pa.us";}
-        if (s.endsWith(".pr.us")) {return "pr.us";}
-        if (s.endsWith(".ri.us")) {return "ri.us";}
-        if (s.endsWith(".sc.us")) {return "sc.us";}
-        if (s.endsWith(".sd.us")) {return "sd.us";}
-        if (s.endsWith(".tn.us")) {return "tn.us";}
-        if (s.endsWith(".tx.us")) {return "tx.us";}
-        if (s.endsWith(".ut.us")) {return "ut.us";}
-        if (s.endsWith(".vi.us")) {return "vi.us";}
-        if (s.endsWith(".vt.us")) {return "vt.us";}
-        if (s.endsWith(".va.us")) {return "va.us";}
-        if (s.endsWith(".wa.us")) {return "wa.us";}
-        if (s.endsWith(".wi.us")) {return "wi.us";}
-        if (s.endsWith(".wv.us")) {return "wv.us";}
-        if (s.endsWith(".wy.us")) {return "wy.us";}
-        if (s.endsWith(".k12.ak.us")) {return "k12.ak.us";}
-        if (s.endsWith(".k12.al.us")) {return "k12.al.us";}
-        if (s.endsWith(".k12.ar.us")) {return "k12.ar.us";}
-        if (s.endsWith(".k12.as.us")) {return "k12.as.us";}
-        if (s.endsWith(".k12.az.us")) {return "k12.az.us";}
-        if (s.endsWith(".k12.ca.us")) {return "k12.ca.us";}
-        if (s.endsWith(".k12.co.us")) {return "k12.co.us";}
-        if (s.endsWith(".k12.ct.us")) {return "k12.ct.us";}
-        if (s.endsWith(".k12.dc.us")) {return "k12.dc.us";}
-        if (s.endsWith(".k12.de.us")) {return "k12.de.us";}
-        if (s.endsWith(".k12.fl.us")) {return "k12.fl.us";}
-        if (s.endsWith(".k12.ga.us")) {return "k12.ga.us";}
-        if (s.endsWith(".k12.gu.us")) {return "k12.gu.us";}
-        if (s.endsWith(".k12.ia.us")) {return "k12.ia.us";}
-        if (s.endsWith(".k12.id.us")) {return "k12.id.us";}
-        if (s.endsWith(".k12.il.us")) {return "k12.il.us";}
-        if (s.endsWith(".k12.in.us")) {return "k12.in.us";}
-        if (s.endsWith(".k12.ks.us")) {return "k12.ks.us";}
-        if (s.endsWith(".k12.ky.us")) {return "k12.ky.us";}
-        if (s.endsWith(".k12.la.us")) {return "k12.la.us";}
-        if (s.endsWith(".k12.ma.us")) {return "k12.ma.us";}
-        if (s.endsWith(".k12.md.us")) {return "k12.md.us";}
-        if (s.endsWith(".k12.me.us")) {return "k12.me.us";}
-        if (s.endsWith(".k12.mn.us")) {return "k12.mn.us";}
-        if (s.endsWith(".k12.mo.us")) {return "k12.mo.us";}
-        if (s.endsWith(".k12.ms.us")) {return "k12.ms.us";}
-        if (s.endsWith(".k12.mt.us")) {return "k12.mt.us";}
-        if (s.endsWith(".k12.nc.us")) {return "k12.nc.us";}
-        if (s.endsWith(".k12.ne.us")) {return "k12.ne.us";}
-        if (s.endsWith(".k12.nh.us")) {return "k12.nh.us";}
-        if (s.endsWith(".k12.nj.us")) {return "k12.nj.us";}
-        if (s.endsWith(".k12.nm.us")) {return "k12.nm.us";}
-        if (s.endsWith(".k12.nv.us")) {return "k12.nv.us";}
-        if (s.endsWith(".k12.ny.us")) {return "k12.ny.us";}
-        if (s.endsWith(".k12.oh.us")) {return "k12.oh.us";}
-        if (s.endsWith(".k12.ok.us")) {return "k12.ok.us";}
-        if (s.endsWith(".k12.or.us")) {return "k12.or.us";}
-        if (s.endsWith(".k12.pa.us")) {return "k12.pa.us";}
-        if (s.endsWith(".k12.pr.us")) {return "k12.pr.us";}
-        if (s.endsWith(".k12.ri.us")) {return "k12.ri.us";}
-        if (s.endsWith(".k12.sc.us")) {return "k12.sc.us";}
-        if (s.endsWith(".k12.tn.us")) {return "k12.tn.us";}
-        if (s.endsWith(".k12.tx.us")) {return "k12.tx.us";}
-        if (s.endsWith(".k12.ut.us")) {return "k12.ut.us";}
-        if (s.endsWith(".k12.vi.us")) {return "k12.vi.us";}
-        if (s.endsWith(".k12.vt.us")) {return "k12.vt.us";}
-        if (s.endsWith(".k12.va.us")) {return "k12.va.us";}
-        if (s.endsWith(".k12.wa.us")) {return "k12.wa.us";}
-        if (s.endsWith(".k12.wi.us")) {return "k12.wi.us";}
-        if (s.endsWith(".k12.wy.us")) {return "k12.wy.us";}
-        if (s.endsWith(".cc.ak.us")) {return "cc.ak.us";}
-        if (s.endsWith(".cc.al.us")) {return "cc.al.us";}
-        if (s.endsWith(".cc.ar.us")) {return "cc.ar.us";}
-        if (s.endsWith(".cc.as.us")) {return "cc.as.us";}
-        if (s.endsWith(".cc.az.us")) {return "cc.az.us";}
-        if (s.endsWith(".cc.ca.us")) {return "cc.ca.us";}
-        if (s.endsWith(".cc.co.us")) {return "cc.co.us";}
-        if (s.endsWith(".cc.ct.us")) {return "cc.ct.us";}
-        if (s.endsWith(".cc.dc.us")) {return "cc.dc.us";}
-        if (s.endsWith(".cc.de.us")) {return "cc.de.us";}
-        if (s.endsWith(".cc.fl.us")) {return "cc.fl.us";}
-        if (s.endsWith(".cc.ga.us")) {return "cc.ga.us";}
-        if (s.endsWith(".cc.gu.us")) {return "cc.gu.us";}
-        if (s.endsWith(".cc.hi.us")) {return "cc.hi.us";}
-        if (s.endsWith(".cc.ia.us")) {return "cc.ia.us";}
-        if (s.endsWith(".cc.id.us")) {return "cc.id.us";}
-        if (s.endsWith(".cc.il.us")) {return "cc.il.us";}
-        if (s.endsWith(".cc.in.us")) {return "cc.in.us";}
-        if (s.endsWith(".cc.ks.us")) {return "cc.ks.us";}
-        if (s.endsWith(".cc.ky.us")) {return "cc.ky.us";}
-        if (s.endsWith(".cc.la.us")) {return "cc.la.us";}
-        if (s.endsWith(".cc.ma.us")) {return "cc.ma.us";}
-        if (s.endsWith(".cc.md.us")) {return "cc.md.us";}
-        if (s.endsWith(".cc.me.us")) {return "cc.me.us";}
-        if (s.endsWith(".cc.mn.us")) {return "cc.mn.us";}
-        if (s.endsWith(".cc.mo.us")) {return "cc.mo.us";}
-        if (s.endsWith(".cc.ms.us")) {return "cc.ms.us";}
-        if (s.endsWith(".cc.mt.us")) {return "cc.mt.us";}
-        if (s.endsWith(".cc.nc.us")) {return "cc.nc.us";}
-        if (s.endsWith(".cc.nd.us")) {return "cc.nd.us";}
-        if (s.endsWith(".cc.ne.us")) {return "cc.ne.us";}
-        if (s.endsWith(".cc.nh.us")) {return "cc.nh.us";}
-        if (s.endsWith(".cc.nj.us")) {return "cc.nj.us";}
-        if (s.endsWith(".cc.nm.us")) {return "cc.nm.us";}
-        if (s.endsWith(".cc.nv.us")) {return "cc.nv.us";}
-        if (s.endsWith(".cc.ny.us")) {return "cc.ny.us";}
-        if (s.endsWith(".cc.oh.us")) {return "cc.oh.us";}
-        if (s.endsWith(".cc.ok.us")) {return "cc.ok.us";}
-        if (s.endsWith(".cc.or.us")) {return "cc.or.us";}
-        if (s.endsWith(".cc.pa.us")) {return "cc.pa.us";}
-        if (s.endsWith(".cc.pr.us")) {return "cc.pr.us";}
-        if (s.endsWith(".cc.ri.us")) {return "cc.ri.us";}
-        if (s.endsWith(".cc.sc.us")) {return "cc.sc.us";}
-        if (s.endsWith(".cc.sd.us")) {return "cc.sd.us";}
-        if (s.endsWith(".cc.tn.us")) {return "cc.tn.us";}
-        if (s.endsWith(".cc.tx.us")) {return "cc.tx.us";}
-        if (s.endsWith(".cc.ut.us")) {return "cc.ut.us";}
-        if (s.endsWith(".cc.vi.us")) {return "cc.vi.us";}
-        if (s.endsWith(".cc.vt.us")) {return "cc.vt.us";}
-        if (s.endsWith(".cc.va.us")) {return "cc.va.us";}
-        if (s.endsWith(".cc.wa.us")) {return "cc.wa.us";}
-        if (s.endsWith(".cc.wi.us")) {return "cc.wi.us";}
-        if (s.endsWith(".cc.wv.us")) {return "cc.wv.us";}
-        if (s.endsWith(".cc.wy.us")) {return "cc.wy.us";}
-        if (s.endsWith(".lib.ak.us")) {return "lib.ak.us";}
-        if (s.endsWith(".lib.al.us")) {return "lib.al.us";}
-        if (s.endsWith(".lib.ar.us")) {return "lib.ar.us";}
-        if (s.endsWith(".lib.as.us")) {return "lib.as.us";}
-        if (s.endsWith(".lib.az.us")) {return "lib.az.us";}
-        if (s.endsWith(".lib.ca.us")) {return "lib.ca.us";}
-        if (s.endsWith(".lib.co.us")) {return "lib.co.us";}
-        if (s.endsWith(".lib.ct.us")) {return "lib.ct.us";}
-        if (s.endsWith(".lib.dc.us")) {return "lib.dc.us";}
-        if (s.endsWith(".lib.fl.us")) {return "lib.fl.us";}
-        if (s.endsWith(".lib.ga.us")) {return "lib.ga.us";}
-        if (s.endsWith(".lib.gu.us")) {return "lib.gu.us";}
-        if (s.endsWith(".lib.hi.us")) {return "lib.hi.us";}
-        if (s.endsWith(".lib.ia.us")) {return "lib.ia.us";}
-        if (s.endsWith(".lib.id.us")) {return "lib.id.us";}
-        if (s.endsWith(".lib.il.us")) {return "lib.il.us";}
-        if (s.endsWith(".lib.in.us")) {return "lib.in.us";}
-        if (s.endsWith(".lib.ks.us")) {return "lib.ks.us";}
-        if (s.endsWith(".lib.ky.us")) {return "lib.ky.us";}
-        if (s.endsWith(".lib.la.us")) {return "lib.la.us";}
-        if (s.endsWith(".lib.ma.us")) {return "lib.ma.us";}
-        if (s.endsWith(".lib.md.us")) {return "lib.md.us";}
-        if (s.endsWith(".lib.me.us")) {return "lib.me.us";}
-        if (s.endsWith(".lib.mn.us")) {return "lib.mn.us";}
-        if (s.endsWith(".lib.mo.us")) {return "lib.mo.us";}
-        if (s.endsWith(".lib.ms.us")) {return "lib.ms.us";}
-        if (s.endsWith(".lib.mt.us")) {return "lib.mt.us";}
-        if (s.endsWith(".lib.nc.us")) {return "lib.nc.us";}
-        if (s.endsWith(".lib.nd.us")) {return "lib.nd.us";}
-        if (s.endsWith(".lib.ne.us")) {return "lib.ne.us";}
-        if (s.endsWith(".lib.nh.us")) {return "lib.nh.us";}
-        if (s.endsWith(".lib.nj.us")) {return "lib.nj.us";}
-        if (s.endsWith(".lib.nm.us")) {return "lib.nm.us";}
-        if (s.endsWith(".lib.nv.us")) {return "lib.nv.us";}
-        if (s.endsWith(".lib.ny.us")) {return "lib.ny.us";}
-        if (s.endsWith(".lib.oh.us")) {return "lib.oh.us";}
-        if (s.endsWith(".lib.ok.us")) {return "lib.ok.us";}
-        if (s.endsWith(".lib.or.us")) {return "lib.or.us";}
-        if (s.endsWith(".lib.pa.us")) {return "lib.pa.us";}
-        if (s.endsWith(".lib.pr.us")) {return "lib.pr.us";}
-        if (s.endsWith(".lib.ri.us")) {return "lib.ri.us";}
-        if (s.endsWith(".lib.sc.us")) {return "lib.sc.us";}
-        if (s.endsWith(".lib.sd.us")) {return "lib.sd.us";}
-        if (s.endsWith(".lib.tn.us")) {return "lib.tn.us";}
-        if (s.endsWith(".lib.tx.us")) {return "lib.tx.us";}
-        if (s.endsWith(".lib.ut.us")) {return "lib.ut.us";}
-        if (s.endsWith(".lib.vi.us")) {return "lib.vi.us";}
-        if (s.endsWith(".lib.vt.us")) {return "lib.vt.us";}
-        if (s.endsWith(".lib.va.us")) {return "lib.va.us";}
-        if (s.endsWith(".lib.wa.us")) {return "lib.wa.us";}
-        if (s.endsWith(".lib.wi.us")) {return "lib.wi.us";}
-        if (s.endsWith(".lib.wy.us")) {return "lib.wy.us";}
-        if (s.endsWith(".pvt.k12.ma.us")) {return "pvt.k12.ma.us";}
-        if (s.endsWith(".chtr.k12.ma.us")) {return "chtr.k12.ma.us";}
-        if (s.endsWith(".paroch.k12.ma.us")) {return "paroch.k12.ma.us";}
-        if (s.endsWith(".ar.com")) {return "ar.com";}
-        if (s.endsWith(".br.com")) {return "br.com";}
-        if (s.endsWith(".cn.com")) {return "cn.com";}
-        if (s.endsWith(".de.com")) {return "de.com";}
-        if (s.endsWith(".eu.com")) {return "eu.com";}
-        if (s.endsWith(".gb.com")) {return "gb.com";}
-        if (s.endsWith(".hu.com")) {return "hu.com";}
-        if (s.endsWith(".jpn.com")) {return "jpn.com";}
-        if (s.endsWith(".kr.com")) {return "kr.com";}
-        if (s.endsWith(".mex.com")) {return "mex.com";}
-        if (s.endsWith(".no.com")) {return "no.com";}
-        if (s.endsWith(".qc.com")) {return "qc.com";}
-        if (s.endsWith(".ru.com")) {return "ru.com";}
-        if (s.endsWith(".sa.com")) {return "sa.com";}
-        if (s.endsWith(".se.com")) {return "se.com";}
-        if (s.endsWith(".uk.com")) {return "uk.com";}
-        if (s.endsWith(".us.com")) {return "us.com";}
-        if (s.endsWith(".uy.com")) {return "uy.com";}
-        if (s.endsWith(".za.com")) {return "za.com";}
-        if (s.endsWith(".africa.com")) {return "africa.com";}
-        if (s.endsWith(".gr.com")) {return "gr.com";}
-        if (s.endsWith(".co.com")) {return "co.com";}
-        if (s.endsWith(".xenapponazure.com")) {return "xenapponazure.com";}
-        if (s.endsWith(".jdevcloud.com")) {return "jdevcloud.com";}
-        if (s.endsWith(".wpdevcloud.com")) {return "wpdevcloud.com";}
-        if (s.endsWith(".cloudcontrolled.com")) {return "cloudcontrolled.com";}
-        if (s.endsWith(".cloudcontrolapp.com")) {return "cloudcontrolapp.com";}
-        if (s.endsWith(".firebaseapp.com")) {return "firebaseapp.com";}
-        if (s.endsWith(".service.gov.uk")) {return "service.gov.uk";}
-        if (s.endsWith(".githubusercontent.com")) {return "githubusercontent.com";}
-        if (s.endsWith(".homeoffice.gov.uk")) {return "homeoffice.gov.uk";}
-        if (s.endsWith(".appspot.com")) {return "appspot.com";}
-        if (s.endsWith(".codespot.com")) {return "codespot.com";}
-        if (s.endsWith(".googleapis.com")) {return "googleapis.com";}
-        if (s.endsWith(".googlecode.com")) {return "googlecode.com";}
-        if (s.endsWith(".herokuapp.com")) {return "herokuapp.com";}
-        if (s.endsWith(".herokussl.com")) {return "herokussl.com";}
-        if (s.endsWith(".pixolino.com")) {return "pixolino.com";}
-        if (s.endsWith(".barsyonline.com")) {return "barsyonline.com";}
-        if (s.endsWith(".hk.com")) {return "hk.com";}
+        String secondLevelPart = domain.substring(beforeLastDot + 1, lastDot).toLowerCase(Locale.ENGLISH);
 
+        if (secondLevelPart.equals("co")) return 2;
+        if (secondLevelPart.equals("com")) return 2;
+        if (secondLevelPart.equals("org")) return 2;
+        if (secondLevelPart.equals("net")) return 2;
+        if (secondLevelPart.equals("ed")) return 2;
+        if (secondLevelPart.equals("edu")) return 2;
+        if (secondLevelPart.equals("gov")) return 2;
+        if (secondLevelPart.equals("ac")) return 2;
+        if (secondLevelPart.equals("me")) return 2;
+        if (secondLevelPart.equals("police")) return 2;
+        if (secondLevelPart.equals("nhs")) return 2;
+        if (secondLevelPart.equals("ltd")) return 2;
 
-        return null;
+        if (secondLevelPart.equals("plc")) return 2;
+        if (secondLevelPart.equals("sch")) return 2;
+        if (secondLevelPart.equals("mod")) return 2;
+        if (secondLevelPart.equals("mil")) return 2;
+        if (secondLevelPart.equals("int")) return 2;
+
+        return 1;
     }
 
 
