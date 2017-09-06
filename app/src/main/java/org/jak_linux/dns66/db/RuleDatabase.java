@@ -430,9 +430,7 @@ public class RuleDatabase {
         // while in DNS66, it is just about minimizing too coarse blocking of fourth-level
         // domains - if there is a misdetection, it won't have a security impact, just a
         // different granularity of blocking for the particular domain.
-
-        // TODO refactor to not use split
-
+        
         // positions
         int lastDot = -1;
         int beforeLastDot = -1;
