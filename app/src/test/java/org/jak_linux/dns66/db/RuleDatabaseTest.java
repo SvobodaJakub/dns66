@@ -94,6 +94,10 @@ public class RuleDatabaseTest {
         assertEquals("zzz.example.com", RuleDatabase.parseLine("xxx.yyy.zzz.example.com ", true));
         assertEquals("zzz.example.co.uk", RuleDatabase.parseLine("xxx.yyy.zzz.example.co.uk ", true));
         assertEquals("example.spam.uk", RuleDatabase.parseLine("xxx.yyy.zzz.example.spam.uk ", true));
+        assertEquals("example.spam.uk", RuleDatabase.parseLine("||xxx.yyy.zzz.example.spam.uk^", true));
+        assertEquals("example.com", RuleDatabase.parseLine("||www.example.com^", true));
+        assertEquals("example.com", RuleDatabase.parseLine("www.example.com  # somecomment", true));
+        assertEquals("example.com", RuleDatabase.parseLine("0.0.0.0  www.example.com  # somecomment", true));
     }
 
     @Test

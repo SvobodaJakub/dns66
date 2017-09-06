@@ -235,7 +235,7 @@ public class RuleDatabase {
 
             // If the host address begins with "www." (e.g. www.badsite.com), it also adds the domain
             // name without the leading "www." (e.g. badsite.com).
-            if (line.regionMatches(0, "www.", 0, 4))
+            if (line.regionMatches(startOfHost, "www.", 0, 4))
                 startOfHost += 4;
         }
 
