@@ -98,6 +98,16 @@ public class RuleDatabaseTest {
         assertEquals("example.com", RuleDatabase.parseLine("||www.example.com^", true));
         assertEquals("example.com", RuleDatabase.parseLine("www.example.com  # somecomment", true));
         assertEquals("example.com", RuleDatabase.parseLine("0.0.0.0  www.example.com  # somecomment", true));
+
+        // Disable extended matching
+        assertEquals("www.example.com", RuleDatabase.parseLine("www.example.com ", false));
+        assertEquals("xxx.yyy.zzz.example.com", RuleDatabase.parseLine("xxx.yyy.zzz.example.com ", false));
+        assertEquals("xxx.yyy.zzz.example.co.uk", RuleDatabase.parseLine("xxx.yyy.zzz.example.co.uk ", false));
+        assertEquals("xxx.yyy.zzz.example.spam.uk", RuleDatabase.parseLine("xxx.yyy.zzz.example.spam.uk ", false));
+        assertEquals("xxx.yyy.zzz.example.spam.uk", RuleDatabase.parseLine("||xxx.yyy.zzz.example.spam.uk^", false));
+        assertEquals("www.example.com", RuleDatabase.parseLine("||www.example.com^", false));
+        assertEquals("www.example.com", RuleDatabase.parseLine("www.example.com  # somecomment", false));
+        assertEquals("www.example.com", RuleDatabase.parseLine("0.0.0.0  www.example.com  # somecomment", false));
     }
 
     @Test
