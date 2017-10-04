@@ -121,7 +121,7 @@ public class RuleDatabase {
         if (startOfHost >= endOfLine)
             return null;
 
-        // Reject strings containing a space or one of the symbols - that wouldn't be a signle
+        // Reject strings containing a space or one of the symbols - that wouldn't be a single
         // domain but some more complicated AdBlock plus filter and we want to ignore them
         for (int i = startOfHost; i < endOfLine; i++) {
             char testedChar = line.charAt(i);

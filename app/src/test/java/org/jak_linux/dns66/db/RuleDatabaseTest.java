@@ -88,6 +88,11 @@ public class RuleDatabaseTest {
         assertNull(RuleDatabase.parseLine("\t"));
         assertNull(RuleDatabase.parseLine(" "));
         assertNull(RuleDatabase.parseLine("x.x"));
+        assertNull(RuleDatabase.parseLine("uk"));
+        assertNull(RuleDatabase.parseLine("exam/ple.com"));
+        assertNull(RuleDatabase.parseLine("example.com?asdf=fdsa"));
+        assertNull(RuleDatabase.parseLine("example.com#@##videoads"));  // inapplicable adblock filter
+        assertNull(RuleDatabase.parseLine("examplecom"));
 
         // Extended matching
         assertEquals("example.com", RuleDatabase.parseLine("www.example.com ", true));
