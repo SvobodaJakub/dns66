@@ -274,7 +274,9 @@ public class RuleDatabase {
             //  blocklist and can be blocked)
 
             // This is effectively like having a wildcard before every domain in the blacklist -
-            // *.example.com
+            // *.example.com - but it is more efficient because it is faster to check the existence
+            // of a string in a hashset 1-10 times than to build and evaluate a huge regexp
+            // containing all the entries of the domain blacklist.
 
             for (int i = 0; i < 10; i++) {
                 // strip up to 10 leading parts (so that there is an upper bound for performance reasons)
@@ -429,27 +431,30 @@ public class RuleDatabase {
         // Remember that the goal of publicsuffix.org is to allow safe handling of cookies,
         // while in DNS66, it is just about minimizing too coarse blocking of fourth-level
         // domains - if there is a misdetection, it won't have a security impact, just a
-        // different granularity of blocking for the particular domain.
+        // different granularity of blocking for the particular domain. Therefore, misdetections
+        // like co.com generally don't matter - it would only mean that anything under .co.com
+        // would coalesce one subdomain deeper, but all explicitly listed domains in a blocklist
+        // would still be properly blocked.
         
         // positions
         int lastDot = -1;
-        int beforeLastDot = -1;
+        int secondLastDot = -1;
 
         for (int i = domain.length() - 1; i >= 0; i--) {
             if (domain.charAt(i) == '.') {
                 if (-1 == lastDot) {
                     lastDot = i;
                 } else {
-                    beforeLastDot = i;
+                    secondLastDot = i;
                     break;
                 }
             }
         }
 
-        if (-1 == beforeLastDot)
+        if (-1 == secondLastDot)
             return 1;
 
-        String secondLevelPart = domain.substring(beforeLastDot + 1, lastDot).toLowerCase(Locale.ENGLISH);
+        String secondLevelPart = domain.substring(secondLastDot + 1, lastDot).toLowerCase(Locale.ENGLISH);
 
         if (secondLevelPart.equals("co")) return 2;
         if (secondLevelPart.equals("com")) return 2;
