@@ -53,7 +53,6 @@ public class RuleDatabase {
         return instance;
     }
 
-
     /**
      * Parse a single line in a hosts file
      *
@@ -375,7 +374,6 @@ public class RuleDatabase {
             nextBlockedHosts.add(host);
         }
     }
-
 
     /**
      * Load a single file
