@@ -121,6 +121,10 @@ public class RuleDatabase {
         if (startOfHost >= endOfLine)
             return null;
 
+        // Given that there is already a loop that loops through the string, we can also count the
+        // dots without performance hit.
+        int numOfDots = 0;
+
         // Reject strings containing a space or one of the symbols - that wouldn't be a single
         // domain but some more complicated AdBlock plus filter and we want to ignore them
         for (int i = startOfHost; i < endOfLine; i++) {
@@ -157,6 +161,10 @@ public class RuleDatabase {
                 return null;
             if (testedChar == '+')
                 return null;
+
+            // count dots
+            if (testedChar == '.')
+                numOfDots++;
         }
 
         // Reject strings beginning with either of these chars:
@@ -187,19 +195,6 @@ public class RuleDatabase {
         if (line.charAt(endOfLine - 1) == '.') return null;
         if (line.charAt(endOfLine - 1) == '-') return null;
         if (line.charAt(endOfLine - 1) == '_') return null;
-
-        // reject if there is no dot in the string
-        int numOfDots = 0;
-        for (int i = startOfHost; i < endOfLine; i++) {
-            if (line.charAt(i) == '.')
-                numOfDots++;
-        }
-        if (numOfDots == 0)
-                return null;
-
-        // reject strings shorter than 3 characters
-        if (startOfHost + 2 >= (endOfLine - 1) )
-            return null;
 
         if (extendedFiltering) {
             if (numOfDots > 2) {  // optimization - with less than 3 parts, it doesn't matter
@@ -243,9 +238,10 @@ public class RuleDatabase {
         if (startOfHost >= endOfLine)
             return null;
 
-        // reject strings shorter than 3 characters
-        if (startOfHost + 2 >= (endOfLine - 1) )
+        // reject strings shorter than 1 character
+        if (startOfHost + 1 > (endOfLine - 1) )
             return null;
+
 
         return line.substring(startOfHost, endOfLine).toLowerCase(Locale.ENGLISH);
     }

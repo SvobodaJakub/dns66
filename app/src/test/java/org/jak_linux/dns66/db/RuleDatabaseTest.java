@@ -72,6 +72,10 @@ public class RuleDatabaseTest {
         assertEquals("example.com", RuleDatabase.parseLine("127.0.0.1   example.com "));
         assertEquals("example.com", RuleDatabase.parseLine("127.0.0.1\t example.com "));
         assertEquals("example.com", RuleDatabase.parseLine("::1\t example.com "));
+        // allow whole TLDs
+        assertEquals("com", RuleDatabase.parseLine("127.0.0.1   com"));
+        assertEquals("xxxbizbadtld", RuleDatabase.parseLine("xxxbizbadtld"));
+        assertEquals("xx", RuleDatabase.parseLine("xx"));
         // Space between values
         // Invalid lines
         assertNull(RuleDatabase.parseLine("127.0.0.1 "));
@@ -87,12 +91,15 @@ public class RuleDatabaseTest {
         assertNull(RuleDatabase.parseLine(""));
         assertNull(RuleDatabase.parseLine("\t"));
         assertNull(RuleDatabase.parseLine(" "));
-        assertNull(RuleDatabase.parseLine("x.x"));
-        assertNull(RuleDatabase.parseLine("uk"));
+        assertNull(RuleDatabase.parseLine("."));
+        assertNull(RuleDatabase.parseLine("u"));
+        assertNull(RuleDatabase.parseLine("www.u", true));
+        assertNull(RuleDatabase.parseLine("www."));
+        assertNull(RuleDatabase.parseLine("com."));
+        assertNull(RuleDatabase.parseLine(".com"));
         assertNull(RuleDatabase.parseLine("exam/ple.com"));
         assertNull(RuleDatabase.parseLine("example.com?asdf=fdsa"));
         assertNull(RuleDatabase.parseLine("example.com#@##videoads"));  // inapplicable adblock filter
-        assertNull(RuleDatabase.parseLine("examplecom"));
 
         // Extended matching
         assertEquals("example.com", RuleDatabase.parseLine("www.example.com ", true));
