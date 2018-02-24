@@ -156,7 +156,7 @@ public class RuleDatabaseTest {
         assertFalse(db.isBlocked("foo.com"));
         assertTrue(db.loadReader(item, new StringReader("example.com\n127.0.0.1 foo.com")));
         assertFalse(db.isEmpty());
-        assertTrue(db.isBlocked("example.com"));
+        assertFalse(db.isBlocked("example.com"));  // it has been explicitly whitelisted above
         assertTrue(db.isBlocked("foo.com"));
 
         // Interrupted test
