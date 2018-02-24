@@ -36,6 +36,8 @@ public class RuleDatabase {
     private static final RuleDatabase instance = new RuleDatabase();
     final AtomicReference<HashSet<String>> blockedHosts = new AtomicReference<>(new HashSet<String>());
     HashSet<String> nextBlockedHosts = null;
+    final AtomicReference<HashSet<String>> allowedHosts = new AtomicReference<>(new HashSet<String>());
+    HashSet<String> nextAllowedHosts = null;
     Configuration config = null;
 
     /**
@@ -253,6 +255,11 @@ public class RuleDatabase {
     public boolean isBlocked(String host) {
 
         // example: host == server3389.de.beacon.tracking.badserver.com
+        if (allowedHosts.get().contains(host)) {
+            return false;
+        }
+
+        // example: host == server3389.de.beacon.tracking.badserver.com
         if (blockedHosts.get().contains(host)) {
             return true;
         }
@@ -280,6 +287,9 @@ public class RuleDatabase {
                     break;
                 }
                 host = split_host[1];
+                if (allowedHosts.get().contains(host)) {
+                    return false;
+                }
                 if (blockedHosts.get().contains(host)) {
                     return true;
                 }
@@ -308,6 +318,7 @@ public class RuleDatabase {
         config = FileHelper.loadCurrentSettings(context);
 
         nextBlockedHosts = new HashSet<>(blockedHosts.get().size());
+        nextAllowedHosts = new HashSet<>(allowedHosts.get().size());
 
         Log.i(TAG, "Loading block list");
 
@@ -322,6 +333,7 @@ public class RuleDatabase {
         }
 
         blockedHosts.set(nextBlockedHosts);
+        allowedHosts.set(nextAllowedHosts);
         Runtime.getRuntime().gc();
     }
 
@@ -345,8 +357,14 @@ public class RuleDatabase {
         }
 
         if (reader == null) {
-            addHost(item, item.location);
-            return;
+            boolean extendedFiltering = false;
+            if ((null != config) && (config.extendedFiltering.enabled)) {
+                extendedFiltering = true;
+            }
+            String host = parseLine(item.location, extendedFiltering);
+            if (host != null) {
+                addHost(item, item.location);
+            }
         } else {
             loadReader(item, reader);
         }
@@ -370,6 +388,7 @@ public class RuleDatabase {
     private void addHost(Configuration.Item item, String host) {
         if (item.state == Configuration.Item.STATE_ALLOW) {
             nextBlockedHosts.remove(host);
+            nextAllowedHosts.add(host);
         } else if (item.state == Configuration.Item.STATE_DENY) {
             nextBlockedHosts.add(host);
         }

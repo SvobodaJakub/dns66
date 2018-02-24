@@ -126,6 +126,7 @@ public class RuleDatabaseTest {
     public void testLoadReader() throws Exception {
         RuleDatabase db = new RuleDatabase();
         db.nextBlockedHosts = db.blockedHosts.get();
+        db.nextAllowedHosts = db.allowedHosts.get();
 
         Configuration.Item item = new Configuration.Item();
 
